@@ -261,45 +261,28 @@ async def control_neopixels():
     sunset_steps = 50        # Number of steps for sunset
 
     while True:
-        if compare_timestamps(current_timestamp, sunrise,sunrise_duration) and not sunHasRisen:  # During sunrise period
-            print("Starting sunrise...")
-            await send_status_notification("Starting Sunset")
-            for step in range(sunrise_steps):
-                # Calculate brightness for the current step (0-255 scale)
-                brightness = int((step / (sunrise_steps - 1)) * 255)
-                send_color(1, DAY_COLOR[1], DAY_COLOR[2], DAY_COLOR[3], brightness)
-                await asyncio.sleep(sunrise_duration / sunrise_steps)
-            await send_status_notification("Sunrise Complete: Daytime")
-            print("Sunrise complete.")
+        if not sunHasRisen and not sunHasSet:
+            mode = 'Sunrise'
+        else:
+            mode = 'Sunset'
+        if compare_timestamps(current_timestamp, sunrise, 0) and not compare_timestamps(current_timestamp,sunset,3600):
+            send_color(*DAY_COLOR)
+            await send_status_notification("Daytime Mode, Lights on FULL BRIGHTNESS")
             sunHasRisen = True
-
-        elif compare_timestamps(current_timestamp, sunset,sunset_duration) and not sunHasSet:  # During sunset period
-            print("Starting sunset...")
-            await send_status_notification("Starting Sunset")
-            for step in range(sunset_steps):
-                # Calculate brightness for the current step (255-0 scale)
-                brightness = int(((sunset_steps - 1 - step) / (sunset_steps - 1)) * 255)
-                send_color(1, DAY_COLOR[1], DAY_COLOR[2], DAY_COLOR[3], brightness)
-                await asyncio.sleep(sunset_duration / sunset_steps)
-            send_color(0, 0, 0, 0, 0)  # Ensure it's fully off after sunset
-            print("Sunset complete. Nighttime mode.")
-            await send_status_notification("Sunset Complete: Nighttime")
+        elif compare_timestamps(current_timestamp, sunrise, 900) and not compare_timestamps(current_timestamp,sunset, 2700):
+            await send_status_notification(f"{mode} Mode, Lights on 75% BRIGHTNESS")
+            send_color(1,255,150,20,191)
+        elif compare_timestamps(current_timestamp, sunrise, 1800) and not compare_timestamps(current_timestamp,sunset,1800):
+            await send_status_notification("Daytime Mode, Lights on 50% BRIGHTNESS")
+            send_color(1,255,150,20,127)
+        elif compare_timestamps(current_timestamp, sunrise, 2700) and not compare_timestamps(current_timestamp,sunset,900):
+            await send_status_notification("Daytime Mode, Lights on FULL BRIGHTNESS")
+            send_color(1,255,150,20,63)
+        else:
+            await send_status_notification("Nighttime Mode, Lights off")
+            send_color(*OFF_COLOR)
             sunHasSet = True
-
-        elif sunHasRisen and not sunHasSet:
-            await asyncio.sleep(.1)
-            send_color(1, DAY_COLOR[1], DAY_COLOR[2], DAY_COLOR[3], 255)  # Full brightness during daytime
-            print(f"Day color: {DAY_COLOR}")
-            print("Daytime. Lights ON.")
-            await send_status_notification("Daytime: Lights ON")
-            sunHasRisen = True
-        
-        elif sunHasSet:
-            send_color(1,0,0,0,0)
-            await send_status_notification("Nighttime: Lights Off")
-
-        await asyncio.sleep(60)  # Check every minute
-
+            
 
 async def send_status_notification(message):
     FEED_KEY = 'status-gecko'
