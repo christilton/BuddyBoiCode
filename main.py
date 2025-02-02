@@ -1,4 +1,5 @@
 import uasyncio as asyncio
+import machine
 from machine import I2C, Pin
 import urequests as requests
 import time, sys
@@ -182,7 +183,9 @@ async def send_temp():
     global current_timestamp
     
     while True:
-        temperature = round(sht.temperature, 2)
+        if sht is not None:
+            if sht.temperature is not None:
+                temperature = round(sht.temperature, 2) 
         data = {'value': temperature}
         headers = {
             'X-AIO-Key': ADAFRUIT_AIO_KEY,
@@ -215,7 +218,9 @@ async def send_humidity():
     url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
     
     while True:
-        humidity = round(sht.relative_humidity, 2)
+        if sht is not None:
+            if sht.relative_humidity is not None:
+                humidity = round(sht.relative_humidity, 2)
         
         data = {'value': humidity}
         headers = {
@@ -300,21 +305,12 @@ async def send_status_notification(message):
         print(f"Failed to send error notification: {e}")
 
 async def check_reboot(upday):
-    retries = 0
-    max_retries = 5
-
-    while retries < max_retries:
-        current_day = gss.GetDay()
-        print(f'upday = {upday}, current_day = {current_day}')
-        await send_status_notification(f'Checking Reboot: upday = {upday}, current_day = {current_day}')
-        if current_day is not None:
-            break
-        print("Failed to get current day. Retrying...")
-        await asyncio.sleep(.1)
-        retries += 1
-
+    current_day = gss.GetDay()
+    print(f'upday = {upday}, current_day = {current_day}')
+    await send_status_notification(f'Checking Reboot: upday = {upday}, current_day = {current_day}')
+    
     if current_day is None:
-        print("Error: Unable to fetch current day after multiple attempts.")
+        print("Error: Unable to fetch current day")
         await send_status_notification("System unable to verify date, skipping reboot check.")
         return  # Skip reboot check if we can't get the date
 
@@ -365,11 +361,18 @@ retries = 0
 while retries < 5:
     try:
         sht = SHT4x(1,18,19)
-        asyncio.run(send_status_notification("Temperature Sensor Connected, System Starting"))
-        break
-    except Exception as e:
+        if sht is not None:
+            asyncio.run(send_status_notification("Temperature Sensor Connected, System Starting"))
+            break
+        else:
+            send_color(2,255,1,1,1)
+            retries+= 1
+    except OSError as e:
+        print(f"Error: {e}")
         send_color(2,255,1,1,1)
-        retries+= 1
+        retries += 1
+        time.sleep(1)
+        continue
 offset,sunrise,sunset = gss.GetSunriseSunset()
 upday = gss.GetDay()
 uptime2 = gss.GetTime()

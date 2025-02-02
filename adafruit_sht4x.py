@@ -28,8 +28,7 @@ class CV:
 
 class Mode(CV):
     """Options for ``power_mode``"""
-
-    pass
+    NOHEAT_HIGHPRECISION = 0xFD
 
 Mode.add_values(
     (
@@ -45,6 +44,9 @@ Mode.add_values(
     )
 )
 
+# Ensure the attributes are accessible
+
+
 class SHT4x:
     """
     A driver for the SHT4x temperature and humidity sensor.
@@ -58,7 +60,7 @@ class SHT4x:
         try:
             self.i2c = I2C(bus, sda=Pin(sda_pin), scl=Pin(scl_pin), freq=100000)
         except OSError:
-            self.reset_i2c()
+            raise ValueError("I2C bus or pins are invalid")
         self._buffer = bytearray(6)
         self.reset()
         self._mode = Mode.NOHEAT_HIGHPRECISION
@@ -108,18 +110,7 @@ class SHT4x:
     def temperature(self):
         """The current temperature in degrees Celsius"""
         return self.measurements()[0]
-    
-    def _reset_i2c(self):
-        """Reset I2C communication pins to recover from errors"""
-        sda = Pin(self.sda_pin, Pin.OUT, value=1)  # Set SDA high
-        scl = Pin(self.scl_pin, Pin.OUT, value=1)  # Set SCL high
-        time.sleep(0.1)  # Wait a bit
-        sda = Pin(self.sda_pin, Pin.IN)  # Reset SDA to input mode
-        scl = Pin(self.scl_pin, Pin.IN)  # Reset SCL to input mode
-        time.sleep(0.1)  # Delay before retry
-        # Reinitialize the I2C object to ensure a clean state
-        self._i2c = I2C(0, sda=Pin(self.sda_pin), scl=Pin(self.scl_pin), freq=100000)
-        time.sleep(1)  # Allow time for the I2C bus to stabilize
+
 
 
     def measurements(self):
@@ -163,7 +154,7 @@ class SHT4x:
                 print("EIO 5: I/O error occurred! Retrying...")
                 self.reset()  # Optionally reset the sensor or try other recovery steps
                 # Reset I2C communication
-                self._reset_i2c()
+
 
             else:
                 raise  # Raise other exceptions as is
