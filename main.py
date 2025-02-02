@@ -369,14 +369,7 @@ try:
     print("Inizializing...")
     reset_trinket()
     time.sleep(5)
-    blinks = 0
-    while blinks < 3:
-        send_color(3,255,1,1,255)
-        time.sleep(.5)
-        send_color(1,0,0,0,0)
-        time.sleep(.5)
-        print("blink")
-        blinks += 1
+    send_color(2,1,255,1,1)
 
     retries = 0
     while retries < 5:
@@ -404,9 +397,10 @@ try:
     if compare_timestamps(uptime2_timestamp,sunset,0):
         sunHasSet = True
     print(f"Risen: {sunHasRisen}, Set: {sunHasSet}")
-    send_color(3,255,1,1,1)
-    time.sleep(1)
     asyncio.run(send_status_notification("Initialization complete, System ON"))
+    send_color(3,1,255,1,1)
+    time.sleep(2)
+    send_color(1,0,0,0,0)
     #MAIN LOOP
     asyncio.run(main())
 except KeyboardInterrupt:
