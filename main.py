@@ -1,3 +1,5 @@
+#Code created by Chris Tilton for his gecko Buddy from 2024-2025
+
 import uasyncio as asyncio
 import machine
 from machine import I2C, Pin
