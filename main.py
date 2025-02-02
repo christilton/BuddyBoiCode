@@ -261,27 +261,43 @@ async def control_neopixels():
     sunset_steps = 50        # Number of steps for sunset
 
     while True:
+        state = 0
+        last_state = 0
         if not sunHasRisen and not sunHasSet:
             mode = 'Sunrise'
         else:
             mode = 'Sunset'
         if compare_timestamps(current_timestamp, sunrise, 0) and not compare_timestamps(current_timestamp,sunset,3600):
             send_color(*DAY_COLOR)
-            await send_status_notification("Daytime Mode, Lights on FULL BRIGHTNESS")
+            state = 1
             sunHasRisen = True
         elif compare_timestamps(current_timestamp, sunrise, 900) and not compare_timestamps(current_timestamp,sunset, 2700):
-            await send_status_notification(f"{mode} Mode, Lights on 75% BRIGHTNESS")
+            state = 2
             send_color(1,255,150,20,191)
         elif compare_timestamps(current_timestamp, sunrise, 1800) and not compare_timestamps(current_timestamp,sunset,1800):
-            await send_status_notification("Daytime Mode, Lights on 50% BRIGHTNESS")
             send_color(1,255,150,20,127)
         elif compare_timestamps(current_timestamp, sunrise, 2700) and not compare_timestamps(current_timestamp,sunset,900):
-            await send_status_notification("Daytime Mode, Lights on FULL BRIGHTNESS")
             send_color(1,255,150,20,63)
         else:
             await send_status_notification("Nighttime Mode, Lights off")
             send_color(*OFF_COLOR)
             sunHasSet = True
+        #status for lights only sends when state changes
+        if last_state != state:
+            if state == 1:
+                await send_status_notification("Daytime Mode, Lights on FULL BRIGHTNESS")
+                last_state = 1
+            elif state == 2:
+                await send_status_notification(f"{mode} Mode, Lights on 75% BRIGHTNESS")
+                last_state = 2
+            elif state == 3:
+                await send_status_notification(f"{mode} Mode, Lights on 50% BRIGHTNESS")
+                last_state = 3
+            elif state == 4:
+                await send_status_notification(f"{mode} Mode, Lights on 25% BRIGHTNESS")
+                last_state = 4
+
+        await asyncio.sleep(60)
             
 
 async def send_status_notification(message):
@@ -353,9 +369,14 @@ try:
     print("Inizializing...")
     reset_trinket()
     time.sleep(5)
-    send_color(3,1,255,1,1)
-    time.sleep(2)
-    send_color(1,0,0,0,0)
+    blinks = 0
+    while blinks < 3:
+        send_color(3,255,1,1,255)
+        time.sleep(.5)
+        send_color(1,0,0,0,0)
+        time.sleep(.5)
+        print("blink")
+        blinks += 1
 
     retries = 0
     while retries < 5:
