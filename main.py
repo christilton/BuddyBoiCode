@@ -19,10 +19,6 @@ sunHasRisen = False
 sunHasSet = False
 
 current_timestamp = 0
-
-# Initialize SHT4x sensor
-
-    
     
 # Initialize relay pin
 relay = Pin(4, Pin.OUT)
@@ -32,8 +28,10 @@ sht = None
 SDA_PIN = 0  # Adjust pins as necessary
 SCL_PIN = 1
 trinket = I2C(0,scl=Pin(SCL_PIN, Pin.PULL_UP), sda=Pin(SDA_PIN, Pin.PULL_UP))
+resetpin = Pin(2, Pin.OUT)
+resetpin.high()
     
-button_pin = Pin(15, Pin.IN)
+#button_pin = Pin(15, Pin.IN)
 
 def reset_i2c():
     global i2c
@@ -46,7 +44,21 @@ TRINKET_ADDRESS = 0x12  # Example address
 # Function to send RGB color to the Trinket
 def send_color(lighttype,r, g, b,brightness):
     color_data = bytearray([lighttype,r, g, b,brightness])
-    trinket.writeto(TRINKET_ADDRESS, color_data)
+    while True:
+        try:
+            trinket.writeto(TRINKET_ADDRESS, color_data)
+            break
+        except OSError as e:
+            print(f"Error sending color: {e}")
+            time.sleep(5)
+            continue
+
+
+def reset_trinket():
+    resetpin.low()
+    time.sleep(.1)
+    resetpin.high()
+    time.sleep(.1)
 
 # Colors for daytime and off
 DAY_COLOR = (1,255, 150, 20,255)  # Golden Yellow
@@ -109,16 +121,14 @@ async def manage_setpoint():
         response.close()
         
         #HANDLE TIME HERE
-        new_setpoint = nighttime_setpoint if compare_timestamps(current_timestamp, sunset,1800) or not compare_timestamps(current_timestamp, sunrise,1800) else daytime_setpoint
+        new_setpoint = nighttime_setpoint if compare_timestamps(current_timestamp, sunset,1800) or not compare_timestamps(current_timestamp, sunrise,3600) else daytime_setpoint
         
         if setpoint != new_setpoint:
             setpoint = new_setpoint
             print(f"Setpoint changed to: {setpoint}°F")
             await update_setpoint_feed(setpoint)
         
-        await asyncio.sleep(90)  # Check every minute
-        
-        
+        await asyncio.sleep(90)  # Check every minute     
 
 async def read_sensor(sht):
     lamp_status = 0
@@ -139,9 +149,10 @@ async def read_sensor(sht):
                 await asyncio.sleep(0.5)  # Small delay before retry
         else:
             print("Max retries reached, skipping this cycle.")
-            machine.reset()
             await send_status_notification("CRC Error. Resetting...")
-            continue  # Skip to next loop iteration
+            reset_trinket()
+            machine.reset()
+            # Skip to next loop iteration
         #print("Temperature: {}°F, Humidity: {}%".format(temperature, humidity))
 
         # Bang-bang controller logic
@@ -200,7 +211,7 @@ async def send_temp():
             data = reply.json()
             timestamp_str = data['created_at']
             #print(timestamp_str)
-            sse = time.mktime(gss.GetTimeTuple(timestamp_str))
+            sse = time.mktime(gss.GetTimeTuple(timestamp_str)) # type: ignore
             current_timestamp = gss.GetTimeStamp((time.localtime(sse+(offset*60))))
             
             #print(f"Current Time: {current_timestamp} ET")
@@ -305,26 +316,28 @@ async def send_status_notification(message):
         print(f"Failed to send error notification: {e}")
 
 async def check_reboot(upday):
-    current_day = gss.GetDay()
-    print(f'upday = {upday}, current_day = {current_day}')
-    await send_status_notification(f'Checking Reboot: upday = {upday}, current_day = {current_day}')
-    
-    if current_day is None:
-        print("Error: Unable to fetch current day")
-        await send_status_notification("System unable to verify date, skipping reboot check.")
-        return  # Skip reboot check if we can't get the date
-
-    if current_day != upday:
-        await send_status_notification("System Resetting")
-        relay.off()
-        machine.reset()
+    while True:
+        current_day = gss.GetDay()
+        print(f'upday = {upday}, current_day = {current_day}')
+        await send_status_notification(f'Checking Reboot: upday = {upday}, current_day = {current_day}')
         
-    await asyncio.sleep(900)
+        if current_day is None:
+            print("Error: Unable to fetch current day")
+            await send_status_notification("System unable to verify date, skipping reboot check.")
+            return  # Skip reboot check if we can't get the date
+
+        if current_day != upday:
+            await send_status_notification("System Resetting")
+            relay.off()
+            reset_trinket()
+            machine.reset()
+            
+        await asyncio.sleep(900)
         
         
 def compare_timestamps(currenttime,eventtime,offset):
-    ct = time.mktime(gss.GetTimeTuple(currenttime))-offset
-    et = time.mktime(gss.GetTimeTuple(eventtime))-offset
+    ct = time.mktime(gss.GetTimeTuple(currenttime))-offset # type: ignore
+    et = time.mktime(gss.GetTimeTuple(eventtime))-offset # type: ignore
     if int(ct) >= int(et):
         return True
     else:
@@ -343,51 +356,66 @@ async def main():
             check_reboot(upday),
             #button_checker(),
             #manage_pump()
-        )
+        ) # type: ignore
     except Exception as e:
         relay.off()
-        #print(f"Exception occurred: {e}")
-        sys.print_exception(e)
+        print(f"Exception occurred: {e}")
         send_color(2,1,1,1,255)
         await send_status_notification(e)
+        reset_trinket()
         machine.reset()
 
 # Run the asyncio event loop
-print("Inizializing...")
-send_color(3,1,255,1,1)
-time.sleep(2)
-send_color(1,0,0,0,0)
-retries = 0
-while retries < 5:
-    try:
-        sht = SHT4x(1,18,19)
-        if sht is not None:
-            asyncio.run(send_status_notification("Temperature Sensor Connected, System Starting"))
-            break
-        else:
-            send_color(2,255,1,1,1)
-            retries+= 1
-    except OSError as e:
-        print(f"Error: {e}")
-        send_color(2,255,1,1,1)
-        retries += 1
-        time.sleep(1)
-        continue
-offset,sunrise,sunset = gss.GetSunriseSunset()
-upday = gss.GetDay()
-uptime2 = gss.GetTime()
-uptime2_timestamp = gss.GetTimeStamp(time.localtime(uptime2))
-asyncio.run(send_status_notification(f"Uptime Date: {uptime2_timestamp}, Upday: {upday}, Sunrise = {sunrise}, Sunset = {sunset}"))
-if compare_timestamps(uptime2_timestamp,sunrise,0):
-    sunHasRisen = True
-if compare_timestamps(uptime2_timestamp,sunset,0):
-    sunHasSet = True
-print(f"Risen: {sunHasRisen}, Set: {sunHasSet}")
-send_color(3,255,1,1,1)
-time.sleep(1)
-asyncio.run(send_status_notification("Initialization complete, System ON"))
 try:
+    print("Inizializing...")
+    reset_trinket()
+    time.sleep(5)
+    send_color(3,1,255,1,1)
+    time.sleep(2)
+    send_color(1,0,0,0,0)
+
+    retries = 0
+    while retries < 5:
+        try:
+            sht = SHT4x(1,18,19)
+            if sht is not None:
+                asyncio.run(send_status_notification("Temperature Sensor Connected, System Starting"))
+                break
+            else:
+                send_color(2,255,1,1,1)
+                retries+= 1
+        except OSError as e:
+            print(f"Error: {e}")
+            send_color(2,255,1,1,1)
+            retries += 1
+            time.sleep(1)
+            continue
+    offset,sunrise,sunset = gss.GetSunriseSunset()
+    upday = gss.GetDay()
+    uptime2 = gss.GetTime()
+    uptime2_timestamp = gss.GetTimeStamp(time.localtime(uptime2))
+    asyncio.run(send_status_notification(f"Uptime Date: {uptime2_timestamp}, Upday: {upday}, Sunrise = {sunrise}, Sunset = {sunset}"))
+    if compare_timestamps(uptime2_timestamp,sunrise,0):
+        sunHasRisen = True
+    if compare_timestamps(uptime2_timestamp,sunset,0):
+        sunHasSet = True
+    print(f"Risen: {sunHasRisen}, Set: {sunHasSet}")
+    send_color(3,255,1,1,1)
+    time.sleep(1)
+    asyncio.run(send_status_notification("Initialization complete, System ON"))
+    #MAIN LOOP
     asyncio.run(main())
+except KeyboardInterrupt:
+    print("System Stopped")
+    relay.off()
+    send_color(1,0,0,0,0)
+    asyncio.run(send_status_notification("System Stopped by Keyboard Interrupt"))
 except Exception as e:
-    print(f"Exception in main: {e}")
-    asyncio.run(send_status_notification(e))
+    print(f"System Error: {e}")
+    relay.off()
+    send_color(1,0,0,0,0)
+    time.sleep(.01)
+    send_color(2,255,1,1,1)
+    asyncio.run(send_status_notification(f"System Stopped by Exception: {e}"))
+    reset_trinket()
+    machine.reset()

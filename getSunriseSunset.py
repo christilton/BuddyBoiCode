@@ -2,13 +2,13 @@ import urequests as requests
 import time
 from gc import collect as gc
 
-def GetTimeTuple(timestamp_str):
-    year = int(timestamp_str[0:4])
-    month = int(timestamp_str[5:7])
-    day = int(timestamp_str[8:10])
-    hour = int(timestamp_str[11:13])
-    minute = int(timestamp_str[14:16])
-    second = int(timestamp_str[17:19])
+def GetTimeTuple(timestamp):
+    year = int(timestamp[0:4])
+    month = int(timestamp[5:7])
+    day = int(timestamp[8:10])
+    hour = int(timestamp[11:13])
+    minute = int(timestamp[14:16])
+    second = int(timestamp[17:19])
     timetuple = (year, month, day, hour, minute, second, 0, 0)
     return timetuple
 
@@ -95,3 +95,4 @@ def GetSunriseSunset():
 if __name__ == "__main__":
     print(GetSunriseSunset())
     print(GetDay())
+    print(GetTimeTuple("2022-01-01T00:00:00"))
