@@ -287,30 +287,36 @@ async def control_neopixels():
                 state = 4
                 sunHasRisen = True
 
-        elif sunHasRisen and compare_timestamps(current_timestamp, sunset, 2700):
+        elif sunHasRisen and compare_timestamps(current_timestamp, sunset, 2700) and not sunHasSet:
             send_color(1, 255, 150, 20, 255)
+            state = 1
+        
+        elif sunHasSet:
+            send_color(1,0,0,0,0)
+            state = 5
         
         else:
             if compare_timestamps(current_timestamp, sunset, 2700) and not sunHasSet:
                 if compare_timestamps(current_timestamp, sunset, 1800):
                     if compare_timestamps(current_timestamp,sunset, 900):
                         if compare_timestamps(current_timestamp,sunset, 0):
-                            state = 1
+                            state = 4
                             send_color(1, 255, 150, 20, 0)
                             sunHasRisen = True
                         else:
-                            state = 2
+                            state = 3
                             send_color(1, 255, 150, 20, 127)
                     else: 
                         send_color(1, 255, 150, 20,191)
-                        state = 3
+                        state = 2
                 else:
                     send_color(1, 255, 150, 20, 255)
-                    state = 4
+                    state = 1
             else:
                 send_color(1,0,0,0,0)
                 state = 5
                 sunHasSet = True
+        print(f"State: {state}, Last State: {last_state}")
 
         #status for lights only sends when state changes
         if last_state != state:
@@ -327,7 +333,7 @@ async def control_neopixels():
                 await send_status_notification(f"{mode} Mode, Lights ON 25% BRBrightness")
                 last_state = 4
             elif state == 5:
-                await send_status_notification(f"{mode} Mode, Lights OFF")
+                await send_status_notification(f"Nighttime Mode, Lights OFF")
                 last_state = 5
 
         await asyncio.sleep(60)
@@ -356,7 +362,7 @@ async def check_reboot(upday):
         if current_day is None:
             print("Error: Unable to fetch current day")
             await send_status_notification("System unable to verify date, skipping reboot check.")
-            return  # Skip reboot check if we can't get the date
+            continue
 
         if current_day != upday:
             await send_status_notification("System Resetting")
