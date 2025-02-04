@@ -19,10 +19,11 @@ sunHasRisen = False
 sunHasSet = False
 
 connected = False
+global wlan
 
 current_timestamp = 0
 
-hungryGecko = WDT(timeout=300000) #5 minute timeout
+hungryGecko = WDT(timeout=600000) #10 minute timeout
     
 # Initialize relay pin
 relay = Pin(4, Pin.OUT)
@@ -102,7 +103,7 @@ async def manage_setpoint():
         'Content-Type': 'application/json'
         }
         gc()
-        if connected:
+        if wlan and wlan.isconnected():
             response = requests.get(url, headers=headers)
             if response.status_code == 200:
                 data = response.json()
@@ -119,7 +120,7 @@ async def manage_setpoint():
         'Content-Type': 'application/json'
         }
         gc()
-        if connected:
+        if wlan and wlan.isconnected():
             response = requests.get(url, headers=headers)
             if response.status_code == 200:
                 data = response.json()
@@ -131,7 +132,7 @@ async def manage_setpoint():
         response.close()
         
         #HANDLE TIME HERE
-        if connected:
+        if wlan and wlan.isconnected():
             new_setpoint = nighttime_setpoint if compare_timestamps(current_timestamp, sunset,1800) or not compare_timestamps(current_timestamp, sunrise,3600) else daytime_setpoint
         else:
             new_setpoint = 67.0
@@ -172,7 +173,7 @@ async def read_sensor(sht):
         if temperature < setpoint - deadband:
             relay.on()  # Turn on the heat lamp
             if lamp_status == 0 :
-                if connected:
+                if wlan and wlan.isconnected():
                     data = {'value': 'ON'}
                     FEED_KEY = 'lamp-gecko'
                     url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
@@ -188,7 +189,7 @@ async def read_sensor(sht):
         elif temperature > setpoint:
             relay.off()  # Turn off the heat lamp
             if lamp_status == 1:
-                if connected:
+                if wlan and wlan.isconnected():
                     data = {'value': 'OFF'}
                     FEED_KEY = 'lamp-gecko'
                     url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
@@ -205,7 +206,7 @@ async def read_sensor(sht):
         await asyncio.sleep(1)  # Read sensor values every second
 
 async def send_temp():
-    if connected:
+    if wlan and wlan.isconnected():
         FEED_KEY = 'temperature-gecko'
         url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
         global current_timestamp
@@ -242,7 +243,7 @@ async def send_temp():
             await asyncio.sleep(10)  # Send data every 10 seconds
 
 async def send_humidity():
-    if connected:
+    if wlan and wlan.isconnected():
         FEED_KEY = 'humidity-gecko'
         url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
         
@@ -277,8 +278,8 @@ async def control_neopixels():
     sunset_duration = 3600   # Duration: 1 hour (3600 seconds)
     sunrise_steps = 50       # Number of steps for sunrise
     sunset_steps = 50        # Number of steps for sunset
-    if connected:
-        while True and connected:
+    if wlan and wlan.isconnected():
+        while (True and wlan and wlan.isconnected()):
             state = 0
             last_state = 0
             if not sunHasRisen and not sunHasSet:
@@ -321,7 +322,7 @@ async def control_neopixels():
             
 
 async def send_status_notification(message):
-    if connected:
+    if wlan and wlan.isconnected():
         FEED_KEY = 'status-gecko'
         url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
         data = {'value': str(message)}
@@ -336,7 +337,7 @@ async def send_status_notification(message):
             print(f"Failed to send error notification: {e}")
 
 async def check_reboot(upday):
-    if connected:
+    if wlan and wlan.isconnected():
         while True:
             current_day = gss.GetDay()
             print(f'upday = {upday}, current_day = {current_day}')
@@ -361,50 +362,50 @@ async def watchGecko():
         await asyncio.sleep(10)
 
 
-async def check_connection(wlan):
-    global connected
+async def check_connection():
+    global wlan, connected
     while True:
-        if not wlan.isconnected():
+        if not wlan or not wlan.isconnected():
             print("Wi-Fi disconnected! Attempting to reconnect...")
             send_color(59, 255, 255, 255, 100)  # White = Reconnecting
-            wlan.disconnect()
-            time.sleep(2)
-            new_wlan = connectWifi()
-            if new_wlan:
-                wlan = new_wlan  # Update reference if reconnected
+            
+            wlan = connectWifi()  # ✅ This ensures wlan is updated globally
+            
+            if wlan:
                 connected = True
             else:
                 connected = False
         else:
             connected = True
+        
         await asyncio.sleep(60)  # Check every minute
+
     
 
         
 def connectWifi():
-    global connected 
-    send_color(59, 255,255,255,100)  # Indicate connection attempt
+    global wlan, connected  # Ensure we're updating the global wlan
+    send_color(59, 255, 255, 255, 100)  # Indicate connection attempt
     print('Attempting to Connect to WiFi...')
-    
-    station = network.WLAN(network.STA_IF)
-    station.active(True)
-    station.connect(ssid, password)
-    
+
+    new_wlan = network.WLAN(network.STA_IF)
+    new_wlan.active(True)
+    new_wlan.connect(ssid, password)
+
     timeout = 0
-    while not station.isconnected() and timeout < 100:  # 10-second timeout
+    while not new_wlan.isconnected() and timeout < 100:  # 10-second timeout
         time.sleep(0.1)
         timeout += 1
 
-    if station.isconnected():
+    if new_wlan.isconnected():
+        wlan = new_wlan  #THIS UPDATES THE GLOBAL wlan
         connected = True
-        send_color(59, 0,255,0,100)  # Green = success
+        send_color(59, 0, 255, 0, 100)  # Green = success
         print(f'Connected to {ssid}.')
-        asyncio.run(send_status_notification(f"Connected to {ssid}"))
-        return station
     else:
         connected = False
-        send_color(59, 255,0,0,100)  # Red = failure
-        return None
+        send_color(59, 255, 0, 0, 100)  # Red = failure
+        wlan = None  # Reset wlan if connection fails
 
 
 def compare_timestamps(currenttime,eventtime,newoffset):
@@ -426,7 +427,7 @@ async def main():
             manage_setpoint(),
             control_neopixels(),
             check_reboot(upday),
-            check_connection(wlan),
+            check_connection(),
             watchGecko()
             #button_checker(),
             #manage_pump()
@@ -444,6 +445,8 @@ try:
     reset_trinket()
     time.sleep(3)
     wlan = connectWifi()
+    print(wlan)
+    asyncio.run(send_status_notification(f"Connected to Wifi"))
     print("Inizializing...")
     send_color(58,255,255,255,100)
     retries = 0
