@@ -24,9 +24,14 @@ sht = None
 # I2C configuration for controlling NeoPixels
 SDA_PIN = 0  # Adjust pins as necessary
 SCL_PIN = 1
+
 trinket = I2C(0,scl=Pin(SCL_PIN, Pin.PULL_UP), sda=Pin(SDA_PIN, Pin.PULL_UP))
 resetpin = Pin(2, Pin.OUT)
 resetpin.high()
+TRINKET_ADDRESS = 0x12 
+
+DAY_COLOR = (1,255, 150, 20,255)  # Golden Yellow
+OFF_COLOR = (1, 0, 0, 0, 0)   
     
 #button_pin = Pin(15, Pin.IN)
 
@@ -34,9 +39,6 @@ def reset_i2c():
     global i2c
     i2c = I2C(1, scl=Pin(19), sda=Pin(18))  # Reinitialize I2C
     print("I2C Reset")
-
-# Address of the Arduino Pro Trinket (Worker)
-TRINKET_ADDRESS = 0x12  # Example address
 
 # Function to send RGB color to the Trinket
 def send_color(lighttype,r, g, b,brightness):
@@ -56,10 +58,6 @@ def reset_trinket():
     time.sleep(.1)
     resetpin.high()
     time.sleep(.1)
-
-# Colors for daytime and off
-DAY_COLOR = (1,255, 150, 20,255)  # Golden Yellow
-OFF_COLOR = (1, 0, 0, 0, 0)        # Off
 
 async def update_setpoint_feed(new_setpoint):
     global setpoint
@@ -269,44 +267,82 @@ async def control_neopixels():
     sunrise_duration = 3600  # Duration: 1 hour (3600 seconds)
     sunset_duration = 3600   # Duration: 1 hour (3600 seconds)
     sunrise_steps = 50       # Number of steps for sunrise
-    sunset_steps = 50        # Number of steps for sunset
+    sunset_steps = 50     
+    mode = None  
+    state = 0
+    last_state = 0
     while True:
         if wlan and wlan.isconnected():
-            state = 0
-            last_state = 0
-            if not sunHasRisen and not sunHasSet:
-                mode = 'Sunrise'
-            else:
-                mode = 'Sunset'
-            if compare_timestamps(current_timestamp, sunrise, 0) and not compare_timestamps(current_timestamp,sunset,3600):
-                send_color(*DAY_COLOR)
-                state = 1
-                sunHasRisen = True
-            elif compare_timestamps(current_timestamp, sunrise, 900) and not compare_timestamps(current_timestamp,sunset, 2700):
-                state = 2
-                send_color(1,255,150,20,191)
-            elif compare_timestamps(current_timestamp, sunrise, 1800) and not compare_timestamps(current_timestamp,sunset,1800):
-                send_color(1,255,150,20,127)
-            elif compare_timestamps(current_timestamp, sunrise, 2700) and not compare_timestamps(current_timestamp,sunset,900):
-                send_color(1,255,150,20,63)
-            else:
-                await send_status_notification("Nighttime Mode, Lights off")
-                send_color(*OFF_COLOR)
-                sunHasSet = True
-            #status for lights only sends when state changes
+            if compare_timestamps(current_timestamp, sunrise, 2700) and not sunHasRisen:
+                if compare_timestamps(current_timestamp, sunrise, 1800):
+                    if compare_timestamps(current_timestamp,sunrise, 900):
+                        if compare_timestamps(current_timestamp,sunrise, 0):
+                            state = 4
+                            send_color(1, 255, 150, 20, 255)
+                            sunHasRisen = True
+                            mode = "Daytime"  
+                        else:
+                            state = 3
+                            mode = "Sunrise"  
+                            send_color(1, 255, 150, 20, 191)
+                    else: 
+                        send_color(1, 255, 150, 20, 127)
+                        mode = "Sunrise"  
+                        state = 2
+                else:
+                    send_color(1, 255, 150, 20, 63)     
+                    mode = "Sunrise"               
+                    state = 1
+
+            
+            elif sunHasRisen and not sunHasSet:
+                if compare_timestamps(current_timestamp, sunset, 2700):
+                    if compare_timestamps(current_timestamp, sunset, 1800):
+                        if compare_timestamps(current_timestamp,sunset, 900):
+                            if compare_timestamps(current_timestamp,sunset, 0):
+                                state = 5
+                                mode = "Sunset"
+                                send_color(1, 255, 150, 20, 0)
+                            else:
+                                state = 4
+                                mode = "Sunset"
+                                send_color(1, 255, 150, 20, 63)
+                        else: 
+                            send_color(1, 255, 150, 20,127)
+                            state = 3
+                            mode = "Sunset"
+                    else:
+                        send_color(1, 255, 150, 20, 191)
+                        state = 2
+                        mode = "Sunset"
+                else:
+                    send_color(1,0,0,0,0)
+                    mode = 'Nighttime'
+                    state = 5
+                    sunHasSet = True
+            
+            elif sunHasSet:
+                send_color(1,0,0,0,0)
+                state = 5
+                mode = "Nighttime"
+            elif sunHasRisen:
+                send_color(1,255,150,20,255)
+                mode = "Daytime"  
+
+            print(f"State: {state}, Last State: {last_state}")
+                #status for lights only sends when state changes
             if last_state != state:
                 if state == 1:
-                    await send_status_notification("Daytime Mode, Lights on FULL BRIGHTNESS")
-                    last_state = 1
+                    await send_status_notification(f"{mode} Mode, Lights ON 100% Brightness")
                 elif state == 2:
-                    await send_status_notification(f"{mode} Mode, Lights on 75% BRIGHTNESS")
-                    last_state = 2
+                    await send_status_notification(f"{mode} Mode, Lights ON 75% Brightness")
                 elif state == 3:
-                    await send_status_notification(f"{mode} Mode, Lights on 50% BRIGHTNESS")
-                    last_state = 3
+                    await send_status_notification(f"{mode} Mode, Lights ON 50% Brightness")
                 elif state == 4:
-                    await send_status_notification(f"{mode} Mode, Lights on 25% BRIGHTNESS")
-                    last_state = 4
+                    await send_status_notification(f"{mode} Mode, Lights ON 25% Brightness")
+                elif state == 5:
+                    await send_status_notification(f"{mode} Mode, Lights OFF")
+                last_state = state
             await asyncio.sleep(60)
         else: 
             send_color(*OFF_COLOR)
