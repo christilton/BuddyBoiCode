@@ -17,10 +17,10 @@ sunHasRisen = False
 sunHasSet = False
 connected = False
 current_timestamp = 0
-hungryGecko = WDT(timeout=600000) #10 minute timeout
 # Initialize relay pin
 relay = Pin(4, Pin.OUT)
 sht = None
+wlan = None
 # I2C configuration for controlling NeoPixels
 SDA_PIN = 0  # Adjust pins as necessary
 SCL_PIN = 1
@@ -384,10 +384,10 @@ async def check_reboot(upday):
                 
             await asyncio.sleep(900)
 
-async def watchGecko():
+'''async def watchGecko():
     while True:
         hungryGecko.feed()
-        await asyncio.sleep(10)
+        await asyncio.sleep(1)'''
 
 
 async def check_connection():
@@ -395,7 +395,7 @@ async def check_connection():
     while True:
         if not wlan or not wlan.isconnected():
             print("Wi-Fi disconnected! Attempting to reconnect...")
-            send_color(59, 255, 255, 255, 100)  # White = Reconnecting
+            send_color(59, 255, 255, 255, 50)  # White = Reconnecting
             
             wlan = connectWifi()  # ✅ This ensures wlan is updated globally
             
@@ -417,29 +417,40 @@ async def periodic_status_report():
         
 def connectWifi():
     global wlan, connected
-    send_color(59, 255, 255, 255, 100)
+    send_color(59, 255, 255, 255, 5)
     print('Attempting to Connect to WiFi...')
-    new_wlan = network.WLAN(network.STA_IF)
-    new_wlan.active(True)
+    if wlan is None:
+        new_wlan = network.WLAN(network.STA_IF)
+        new_wlan.active(True)
+    
+    elif wlan.isconnected():
+        print(f'Already connected to {ssid}.')
+        send_color(59, 0, 255, 0, 5)  # Green = already connected
+        connected = True
+        return wlan
+
+    new_wlan.connect(ssid, password)
     timeout = 0
     backoff = 1  # Start with 1 second backoff
+
     while not new_wlan.isconnected():
         new_wlan.connect(ssid, password)
         for _ in range(10):  # 1 second increments
             if new_wlan.isconnected():
                 wlan = new_wlan
                 connected = True
-                send_color(59, 0, 255, 0, 100)
+                send_color(59, 0, 255, 0, 25)
                 print(f'Connected to {ssid}.')
                 return wlan
             time.sleep(1)
-            timeout += 1
+        timeout += 1
         backoff = min(backoff * 2, 60)  # Double backoff up to 60 seconds
         print(f"Retrying WiFi in {backoff} seconds...")
         time.sleep(backoff)
-    send_color(59, 255, 0, 0, 100)
+    send_color(59, 255, 0, 0, 5)
     connected = False
     return None
+
 
 
 def compare_timestamps(currenttime,eventtime,newoffset):
@@ -462,7 +473,7 @@ async def main():
             control_neopixels(),
             check_reboot(upday),
             check_connection(),
-            watchGecko(),
+            #watchGecko(),
             periodic_status_report()
             #button_checker(),
             #manage_pump()
@@ -470,65 +481,67 @@ async def main():
     except Exception as e:
         relay.off()
         print(f"Exception occurred: {e}")
-        send_color(2,1,1,1,255)
+        send_color(59,255,0,0,255)
         await send_status_notification(e)
         reset_trinket()
-        machine.reset()
 
 # Run the asyncio event loop
 try:
+    print("Inizializing...")
     reset_trinket()
-    time.sleep(3)
+    time.sleep(5)
     wlan = connectWifi()
     print(wlan)
     asyncio.run(send_status_notification(f"Connected to Wifi"))
-    print("Inizializing...")
-    send_color(58,255,255,255,100)
+    print('Connecting to Temperature Sensor...')
+    send_color(58,255,255,255,5)
     retries = 0
     while retries < 5:
         try:
-            sht = SHT4x(1,18,19)
+            sht = SHT4x(1,18,19) #SHT TEMPERATURE SENSOR
             if sht is not None:
                 asyncio.run(send_status_notification("Temperature Sensor Connected, System Starting"))
-                send_color(58,0,255,0,100)
+                send_color(58,0,255,0,5)
                 break
             else:
                 retries+= 1
         except OSError as e:
             print(f"Error: {e}")
-            send_color(58,255,0,0,100)
+            send_color(58,255,0,0,5)
             retries += 1
             time.sleep(1)
             continue
-    send_color(57,255,255,255,100)
+    print('Getting Sunrise and Sunset Times...')
+    send_color(57,255,255,255,5)
     if connected:
         offset,sunrise,sunset = gss.GetSunriseSunset()
         upday = gss.GetDay()
         uptime2 = gss.GetTime()
         uptime2_timestamp = gss.GetTimeStamp(time.localtime(uptime2))
         asyncio.run(send_status_notification(f"Uptime Date: {uptime2_timestamp}, Upday: {upday}, Sunrise = {sunrise}, Sunset = {sunset}"))
-    if compare_timestamps(uptime2_timestamp,sunrise,0):
-        sunHasRisen = True
-    if compare_timestamps(uptime2_timestamp,sunset,0):
-        sunHasSet = True
-    print(f"Risen: {sunHasRisen}, Set: {sunHasSet}")
-    send_color(57,0,255,0,100)
+        if compare_timestamps(uptime2_timestamp,sunrise,0):
+            sunHasRisen = True
+        if compare_timestamps(uptime2_timestamp,sunset,0):
+            sunHasSet = True
+        print(f"Risen: {sunHasRisen}, Set: {sunHasSet}")
+    else: 
+        upday = 0
+    send_color(57,0,255,0,5)
     asyncio.run(send_status_notification("Initialization complete, System ON"))
     time.sleep(2)
     send_color(1,0,0,0,0)
     #MAIN LOOP
     asyncio.run(main())
+except Exception as e:
+    print(f"System Error: {e}")
+    relay.off()
+    send_color(1,0,0,0,0)
+    time.sleep(1)
+    send_color(57,255,1,1,5)
+    asyncio.run(send_status_notification(f"System Stopped by Exception: {e}"))
+    reset_trinket()
 except KeyboardInterrupt:
     print("System Stopped")
     relay.off()
     send_color(1,0,0,0,0)
     asyncio.run(send_status_notification("System Stopped by Keyboard Interrupt"))
-except Exception as e:
-    print(f"System Error: {e}")
-    relay.off()
-    send_color(1,0,0,0,0)
-    time.sleep(.01)
-    send_color(2,255,1,1,1)
-    asyncio.run(send_status_notification(f"System Stopped by Exception: {e}"))
-    reset_trinket()
-    machine.reset()
