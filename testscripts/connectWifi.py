@@ -24,7 +24,7 @@ if scan == True:
 
 station.connect(ssid, password)
 while station.isconnected() == False:
-    time.sleep(1)
+    time.sleep(.1)
     pass
 print(f'Connected to {ssid}.')
 #print(station.ifconfig())

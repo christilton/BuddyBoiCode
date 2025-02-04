@@ -1,34 +1,26 @@
+#This code was written by Chris Tilton for his Crested Gecko, Buddy, in 2024-2025
+
+import machine, time, sys, network
 import uasyncio as asyncio
-import machine
-from machine import I2C, Pin, WDT
 import urequests as requests
-import time, sys
+import gc as garbage
+import getSunriseSunset as gss
 from gc import collect as gc
 from secrets import ADAFRUIT_AIO_KEY, ADAFRUIT_AIO_USERNAME, ssid, password
-import getSunriseSunset as gss
-
-# Assuming you have the adafruit_sht4x library for MicroPython
+from machine import I2C, Pin, WDT
 from adafruit_sht4x import SHT4x
-import network
 
 # Global variable for setpoint
 setpoint = 0
 deadband = .25
-
 sunHasRisen = False
 sunHasSet = False
-
 connected = False
-global wlan
-
 current_timestamp = 0
-
 hungryGecko = WDT(timeout=600000) #10 minute timeout
-    
 # Initialize relay pin
 relay = Pin(4, Pin.OUT)
 sht = None
-
 # I2C configuration for controlling NeoPixels
 SDA_PIN = 0  # Adjust pins as necessary
 SCL_PIN = 1
@@ -278,8 +270,8 @@ async def control_neopixels():
     sunset_duration = 3600   # Duration: 1 hour (3600 seconds)
     sunrise_steps = 50       # Number of steps for sunrise
     sunset_steps = 50        # Number of steps for sunset
-    if wlan and wlan.isconnected():
-        while (True and wlan and wlan.isconnected()):
+    while True:
+        if wlan and wlan.isconnected():
             state = 0
             last_state = 0
             if not sunHasRisen and not sunHasSet:
@@ -316,8 +308,8 @@ async def control_neopixels():
                     await send_status_notification(f"{mode} Mode, Lights on 25% BRIGHTNESS")
                     last_state = 4
             await asyncio.sleep(60)
-    else: 
-        send_color(*OFF_COLOR)
+        else: 
+            send_color(*OFF_COLOR)
 
             
 
@@ -341,12 +333,12 @@ async def check_reboot(upday):
         while True:
             current_day = gss.GetDay()
             print(f'upday = {upday}, current_day = {current_day}')
-            await send_status_notification(f'Checking Reboot: upday = {upday}, current_day = {current_day}')
+           # await send_status_notification(f'Checking Reboot: upday = {upday}, current_day = {current_day}')
             
             if current_day is None:
                 print("Error: Unable to fetch current day")
                 await send_status_notification("System unable to verify date, skipping reboot check.")
-                return  # Skip reboot check if we can't get the date
+                continue
 
             if current_day != upday:
                 await send_status_notification("System Resetting")
@@ -380,32 +372,38 @@ async def check_connection():
         
         await asyncio.sleep(60)  # Check every minute
 
-    
-
+async def periodic_status_report():
+    while True:
+         free_mem = garbage.mem_free()/1024
+         total_mem = free_mem + garbage.mem_alloc()/1024
+         await send_status_notification(f"System is running smoothly. Free Memory: {free_mem} KB, Total Memory:{total_mem} KB")
+         await asyncio.sleep(3600)  # Every hour
         
 def connectWifi():
-    global wlan, connected  # Ensure we're updating the global wlan
-    send_color(59, 255, 255, 255, 100)  # Indicate connection attempt
+    global wlan, connected
+    send_color(59, 255, 255, 255, 100)
     print('Attempting to Connect to WiFi...')
-
     new_wlan = network.WLAN(network.STA_IF)
     new_wlan.active(True)
-    new_wlan.connect(ssid, password)
-
     timeout = 0
-    while not new_wlan.isconnected() and timeout < 100:  # 10-second timeout
-        time.sleep(0.1)
-        timeout += 1
-
-    if new_wlan.isconnected():
-        wlan = new_wlan  #THIS UPDATES THE GLOBAL wlan
-        connected = True
-        send_color(59, 0, 255, 0, 100)  # Green = success
-        print(f'Connected to {ssid}.')
-    else:
-        connected = False
-        send_color(59, 255, 0, 0, 100)  # Red = failure
-        wlan = None  # Reset wlan if connection fails
+    backoff = 1  # Start with 1 second backoff
+    while not new_wlan.isconnected():
+        new_wlan.connect(ssid, password)
+        for _ in range(10):  # 1 second increments
+            if new_wlan.isconnected():
+                wlan = new_wlan
+                connected = True
+                send_color(59, 0, 255, 0, 100)
+                print(f'Connected to {ssid}.')
+                return wlan
+            time.sleep(1)
+            timeout += 1
+        backoff = min(backoff * 2, 60)  # Double backoff up to 60 seconds
+        print(f"Retrying WiFi in {backoff} seconds...")
+        time.sleep(backoff)
+    send_color(59, 255, 0, 0, 100)
+    connected = False
+    return None
 
 
 def compare_timestamps(currenttime,eventtime,newoffset):
@@ -428,7 +426,8 @@ async def main():
             control_neopixels(),
             check_reboot(upday),
             check_connection(),
-            watchGecko()
+            watchGecko(),
+            periodic_status_report()
             #button_checker(),
             #manage_pump()
         ) # type: ignore
