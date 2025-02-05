@@ -83,6 +83,12 @@ async def update_setpoint_feed(new_setpoint):
         
     await asyncio.sleep(900)
 
+async def send_setpoint_periodically():
+    global setpoint
+    while True:
+        await update_setpoint_feed(setpoint)  # Send the current setpoint to Adafruit IO
+        await asyncio.sleep(3600)  # Wait for an hour before sending again
+
 async def manage_setpoint():
     global setpoint
     global current_timestamp
@@ -264,88 +270,46 @@ async def send_humidity():
 async def control_neopixels():
     global current_timestamp, sunHasRisen, sunHasSet
 
-    sunrise_duration = 3600  # Duration: 1 hour (3600 seconds)
-    sunset_duration = 3600   # Duration: 1 hour (3600 seconds)
-    sunrise_steps = 50       # Number of steps for sunrise
-    sunset_steps = 50     
-    mode = None  
-    state = 0
-    last_state = 0
+    brightness = 255  # Default to full brightness
+    lights_on = None  # Track light status to avoid redundant notifications
+
     while True:
-        if wlan and wlan.isconnected():
-            if compare_timestamps(current_timestamp, sunrise, 2700) and not sunHasRisen:
-                if compare_timestamps(current_timestamp, sunrise, 1800):
-                    if compare_timestamps(current_timestamp,sunrise, 900):
-                        if compare_timestamps(current_timestamp,sunrise, 0):
-                            state = 4
-                            send_color(1, 255, 150, 20, 255)
-                            sunHasRisen = True
-                            mode = "Daytime"  
-                        else:
-                            state = 3
-                            mode = "Sunrise"  
-                            send_color(1, 255, 150, 20, 191)
-                    else: 
-                        send_color(1, 255, 150, 20, 127)
-                        mode = "Sunrise"  
-                        state = 2
-                else:
-                    send_color(1, 255, 150, 20, 63)     
-                    mode = "Sunrise"               
-                    state = 1
+        if sunHasSet:
+            if lights_on != False:  # Notify only if status changes
+                await send_status_notification("Nighttime, Lights OFF")
+                lights_on = False  # Update state
+            send_color(1, 0, 0, 0, 0)  # Ensure lights are off
+            brightness = 0  # Reset brightness
+        
+        elif compare_timestamps(current_timestamp, sunset, 0) and sunHasRisen:
+            sunHasSet = True
+            await send_status_notification("Sunset Starting")
+            lights_on = False  # Update state
+            brightness = 255  # Reset before dimming
+            while brightness > 0:
+                send_color(1, 255, 120, 50, brightness)
+                brightness -= 5
+                await asyncio.sleep(1)
+            await send_status_notification("Sunset Complete, Nighttime")
 
-            
-            elif sunHasRisen and not sunHasSet:
-                if compare_timestamps(current_timestamp, sunset, 2700):
-                    if compare_timestamps(current_timestamp, sunset, 1800):
-                        if compare_timestamps(current_timestamp,sunset, 900):
-                            if compare_timestamps(current_timestamp,sunset, 0):
-                                state = 5
-                                mode = "Sunset"
-                                send_color(1, 255, 150, 20, 0)
-                            else:
-                                state = 4
-                                mode = "Sunset"
-                                send_color(1, 255, 150, 20, 63)
-                        else: 
-                            send_color(1, 255, 150, 20,127)
-                            state = 3
-                            mode = "Sunset"
-                    else:
-                        send_color(1, 255, 150, 20, 191)
-                        state = 2
-                        mode = "Sunset"
-                else:
-                    send_color(1,0,0,0,0)
-                    mode = 'Nighttime'
-                    state = 5
-                    sunHasSet = True
-            
-            elif sunHasSet:
-                send_color(1,0,0,0,0)
-                state = 5
-                mode = "Nighttime"
-            elif sunHasRisen:
-                send_color(1,255,150,20,255)
-                mode = "Daytime"  
+        elif compare_timestamps(current_timestamp, sunrise, 0) and not sunHasRisen:
+            sunHasRisen = True
+            await send_status_notification("Sunrise Starting")
+            lights_on = True  # Update state
+            brightness = 0  # Start from 0 before fading in
+            while brightness < 255:
+                send_color(1, 255, 120, 50, brightness)
+                brightness += 5
+                await asyncio.sleep(1)
+            await send_status_notification("Sunrise Complete, Daytime")
 
-            print(f"State: {state}, Last State: {last_state}")
-                #status for lights only sends when state changes
-            if last_state != state:
-                if state == 1:
-                    await send_status_notification(f"{mode} Mode, Lights ON 100% Brightness")
-                elif state == 2:
-                    await send_status_notification(f"{mode} Mode, Lights ON 75% Brightness")
-                elif state == 3:
-                    await send_status_notification(f"{mode} Mode, Lights ON 50% Brightness")
-                elif state == 4:
-                    await send_status_notification(f"{mode} Mode, Lights ON 25% Brightness")
-                elif state == 5:
-                    await send_status_notification(f"{mode} Mode, Lights OFF")
-                last_state = state
-            await asyncio.sleep(60)
-        else: 
-            send_color(*OFF_COLOR)
+        else:
+            if lights_on != True:  
+                send_color(*DAY_COLOR)
+                await send_status_notification("Daytime, Lights ON")
+                lights_on = True  # Update state
+
+        await asyncio.sleep(5)  # Prevent CPU overload
 
             
 
@@ -474,7 +438,8 @@ async def main():
             check_reboot(upday),
             check_connection(),
             #watchGecko(),
-            periodic_status_report()
+            periodic_status_report(),
+            send_setpoint_periodically(),
             #button_checker(),
             #manage_pump()
         ) # type: ignore
@@ -500,7 +465,7 @@ try:
         try:
             sht = SHT4x(1,18,19) #SHT TEMPERATURE SENSOR
             if sht is not None:
-                asyncio.run(send_status_notification("Temperature Sensor Connected, System Starting"))
+                asyncio.run(send_status_notification("Temperature Sensor Connected"))
                 send_color(58,0,255,0,5)
                 break
             else:

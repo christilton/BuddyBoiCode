@@ -1,0 +1,85 @@
+async def control_neopixels():
+    global current_timestamp, sunHasRisen, sunHasSet
+
+    sunrise_duration = 3600  # Duration: 1 hour (3600 seconds)
+    sunset_duration = 3600   # Duration: 1 hour (3600 seconds)
+    sunrise_steps = 50       # Number of steps for sunrise
+    sunset_steps = 50     
+    mode = None  
+    state = 0
+    last_state = 0
+    while True:
+        if wlan and wlan.isconnected():
+            if compare_timestamps(current_timestamp, sunrise, 2700) and not sunHasRisen:
+                if compare_timestamps(current_timestamp, sunrise, 1800):
+                    if compare_timestamps(current_timestamp,sunrise, 900):
+                        if compare_timestamps(current_timestamp,sunrise, 0):
+                            state = 4
+                            send_color(1, 255, 150, 20, 255)
+                            sunHasRisen = True
+                            mode = "Daytime"  
+                        else:
+                            state = 3
+                            mode = "Sunrise"  
+                            send_color(1, 255, 150, 20, 191)
+                    else: 
+                        send_color(1, 255, 150, 20, 127)
+                        mode = "Sunrise"  
+                        state = 2
+                else:
+                    send_color(1, 255, 150, 20, 63)     
+                    mode = "Sunrise"               
+                    state = 1
+
+            
+            elif sunHasRisen and not sunHasSet:
+                if compare_timestamps(current_timestamp, sunset, 2700):
+                    if compare_timestamps(current_timestamp, sunset, 1800):
+                        if compare_timestamps(current_timestamp,sunset, 900):
+                            if compare_timestamps(current_timestamp,sunset, 0):
+                                state = 5
+                                mode = "Sunset"
+                                send_color(1, 255, 150, 20, 0)
+                            else:
+                                state = 4
+                                mode = "Sunset"
+                                send_color(1, 255, 150, 20, 63)
+                        else: 
+                            send_color(1, 255, 150, 20,127)
+                            state = 3
+                            mode = "Sunset"
+                    else:
+                        send_color(1, 255, 150, 20, 191)
+                        state = 2
+                        mode = "Sunset"
+                else:
+                    send_color(1,0,0,0,0)
+                    mode = 'Nighttime'
+                    state = 5
+                    sunHasSet = True
+            
+            elif sunHasSet:
+                send_color(1,0,0,0,0)
+                state = 5
+                mode = "Nighttime"
+            elif sunHasRisen:
+                send_color(1,255,150,20,255)
+                mode = "Daytime"  
+
+            print(f"State: {state}, Last State: {last_state}")
+                #status for lights only sends when state changes
+            if last_state != state:
+                if state == 1:
+                    await send_status_notification(f"{mode} Mode, Lights ON 100% Brightness")
+                elif state == 2:
+                    await send_status_notification(f"{mode} Mode, Lights ON 75% Brightness")
+                elif state == 3:
+                    await send_status_notification(f"{mode} Mode, Lights ON 50% Brightness")
+                elif state == 4:
+                    await send_status_notification(f"{mode} Mode, Lights ON 25% Brightness")
+                elif state == 5:
+                    await send_status_notification(f"{mode} Mode, Lights OFF")
+                last_state = state
+            await asyncio.sleep(60)
+        else: 
+            send_color(*OFF_COLOR)
