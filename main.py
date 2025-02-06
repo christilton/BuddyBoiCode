@@ -80,9 +80,8 @@ async def update_setpoint_feed(new_setpoint):
         response.close()
     except Exception as e:
         print(f"Failed to update setpoint feed: {e}")
+    await asyncio.sleep(1)  # Small delay to prevent CPU overload
         
-    await asyncio.sleep(900)
-
 async def send_setpoint_periodically():
     global setpoint
     while True:
@@ -276,7 +275,7 @@ async def control_neopixels():
     while True:
 
         if compare_timestamps(current_timestamp, sunset, 0) and sunHasRisen and not sunHasSet:
-            await send_status_notification("Sunset Starting")
+            await send_lights_notification("Sunset Starting")
             lights_on = False  # Update state
             brightness = 255  # Reset before dimming
             while brightness > 0:
@@ -284,39 +283,52 @@ async def control_neopixels():
                 brightness -= 5
                 await asyncio.sleep(1)
             sunHasSet = True
-            await send_status_notification("Sunset Complete, Nighttime")
+            await send_lights_notification("Sunset Complete, Nighttime")
 
         elif sunHasRisen and not sunHasSet:
             if lights_on != True:  
                 send_color(*DAY_COLOR)
-                await send_status_notification("Daytime, Lights ON")
+                await send_lights_notification("Daytime, Lights ON")
                 lights_on = True  # Update state
 
         elif compare_timestamps(current_timestamp, sunrise, 0) and not sunHasRisen:
-            await send_status_notification("Sunrise Starting")
+            await send_lights_notification("Sunrise Starting")
             lights_on = True  # Update state
             brightness = 0  # Start from 0 before fading in
             while brightness < 255:
                 send_color(1, 255, 120, 50, brightness)
                 brightness += 5
                 await asyncio.sleep(1)
-            await send_status_notification("Sunrise Complete, Daytime")
+            await send_lights_notification("Sunrise Complete, Daytime")
             sunHasRisen = True
 
         else:
             if lights_on != False:  # Notify only if status changes
-                await send_status_notification("Nighttime, Lights OFF")
+                await send_lights_notification("Nighttime, Lights OFF")
                 lights_on = False  # Update state
             send_color(1, 0, 0, 0, 0)  # Ensure lights are off
             brightness = 0  # Reset brightness
 
         await asyncio.sleep(5)  # Prevent CPU overload
 
-            
-
 async def send_status_notification(message):
     if wlan and wlan.isconnected():
         FEED_KEY = 'status-gecko'
+        url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
+        data = {'value': str(message)}
+        headers = {
+            'X-AIO-Key': ADAFRUIT_AIO_KEY,
+            'Content-Type': 'application/json'
+        }
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            response.close()
+        except Exception as e:
+            print(f"Failed to send error notification: {e}")
+
+async def send_lights_notification(message):
+    if wlan and wlan.isconnected():
+        FEED_KEY = 'lights-gecko'
         url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
         data = {'value': str(message)}
         headers = {
