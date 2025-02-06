@@ -1,6 +1,6 @@
 #This code was written by Chris Tilton for his Crested Gecko, Buddy, in 2024-2025
 
-import machine, time, sys, network
+import machine, time, sys, network, io
 import uasyncio as asyncio
 import urequests as requests
 import gc as garbage
@@ -460,8 +460,13 @@ async def main():
         relay.off()
         print(f"Exception occurred: {e}")
         send_color(59,255,0,0,255)
-        await send_status_notification(e)
-        reset_trinket()
+        error_buf = io.StringIO()
+        #sys.print_exception(e, error_buf)
+        error_message = error_buf.getvalue()
+        #print(f"Full Traceback:\n{error_message}")
+        await send_status_notification(f"Error in main:\n{error_message}")
+        time.sleep(5)
+        machine.reset()
 
 # Run the asyncio event loop
 try:
