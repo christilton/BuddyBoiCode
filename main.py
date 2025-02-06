@@ -274,15 +274,8 @@ async def control_neopixels():
     lights_on = None  # Track light status to avoid redundant notifications
 
     while True:
-        if sunHasSet:
-            if lights_on != False:  # Notify only if status changes
-                await send_status_notification("Nighttime, Lights OFF")
-                lights_on = False  # Update state
-            send_color(1, 0, 0, 0, 0)  # Ensure lights are off
-            brightness = 0  # Reset brightness
-        
-        elif compare_timestamps(current_timestamp, sunset, 0) and sunHasRisen:
-            sunHasSet = True
+
+        if compare_timestamps(current_timestamp, sunset, 0) and sunHasRisen and not sunHasSet:
             await send_status_notification("Sunset Starting")
             lights_on = False  # Update state
             brightness = 255  # Reset before dimming
@@ -290,10 +283,16 @@ async def control_neopixels():
                 send_color(1, 255, 120, 50, brightness)
                 brightness -= 5
                 await asyncio.sleep(1)
+            sunHasSet = True
             await send_status_notification("Sunset Complete, Nighttime")
 
+        elif sunHasRisen and not sunHasSet:
+            if lights_on != True:  
+                send_color(*DAY_COLOR)
+                await send_status_notification("Daytime, Lights ON")
+                lights_on = True  # Update state
+
         elif compare_timestamps(current_timestamp, sunrise, 0) and not sunHasRisen:
-            sunHasRisen = True
             await send_status_notification("Sunrise Starting")
             lights_on = True  # Update state
             brightness = 0  # Start from 0 before fading in
@@ -302,12 +301,14 @@ async def control_neopixels():
                 brightness += 5
                 await asyncio.sleep(1)
             await send_status_notification("Sunrise Complete, Daytime")
+            sunHasRisen = True
 
         else:
-            if lights_on != True:  
-                send_color(*DAY_COLOR)
-                await send_status_notification("Daytime, Lights ON")
-                lights_on = True  # Update state
+            if lights_on != False:  # Notify only if status changes
+                await send_status_notification("Nighttime, Lights OFF")
+                lights_on = False  # Update state
+            send_color(1, 0, 0, 0, 0)  # Ensure lights are off
+            brightness = 0  # Reset brightness
 
         await asyncio.sleep(5)  # Prevent CPU overload
 
