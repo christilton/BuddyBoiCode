@@ -8,7 +8,7 @@ import getSunriseSunset as gss
 from gc import collect as gc
 from secrets import ADAFRUIT_AIO_KEY, ADAFRUIT_AIO_USERNAME, ssid, password
 from machine import I2C, Pin, WDT
-from adafruit_sht4x import SHT4x
+from sen0546 import SEN0546 
 
 # Global variable for setpoint
 setpoint = 0
@@ -161,19 +161,15 @@ async def read_sensor(sht):
         retries = 0
         while retries < max_retries:
             try:
-                temperature = round(sht.temperature, 2)
-                humidity = round(sht.relative_humidity, 2)
+                temperature = sht.temp()
+                humidity = sht.humidity()
                 break  # Successful read, exit retry loop
             except OSError as e:
-                if "CRC" in str(e):
-                    print("CRC error detected, retrying...")
-                else:
-                    print(f"Sensor read error: {e}")
                 retries += 1
                 await asyncio.sleep(0.5)  # Small delay before retry
         else:
             print("Max retries reached, skipping this cycle.")
-            await send_status_notification("CRC Error. Resetting...")
+            await send_status_notification("Temperature Sensor Error. Resetting...")
             reset_trinket()
             machine.reset()
             # Skip to next loop iteration
@@ -196,7 +192,7 @@ async def read_sensor(sht):
                 lamp_status = 1
                 print("Heat Lamp turned ON.")
     
-        elif temperature > setpoint:
+        elif temperature >= setpoint:
             relay.off()  # Turn off the heat lamp
             if lamp_status == 1:
                 if wlan and wlan.isconnected():
@@ -223,8 +219,8 @@ async def send_temp():
         
         while True:
             if sht is not None:
-                if sht.temperature is not None:
-                    temperature = round(sht.temperature, 2) 
+                temperature = sht.temp()
+            #print(temperature)
             data = {'value': temperature}
             headers = {
                 'X-AIO-Key': ADAFRUIT_AIO_KEY,
@@ -259,8 +255,8 @@ async def send_humidity():
         
         while True:
             if sht is not None:
-                if sht.relative_humidity is not None:
-                    humidity = round(sht.relative_humidity, 2)
+                if sht.humidity() is not None:
+                    humidity = sht.humidity()
             
             data = {'value': humidity}
             headers = {
@@ -464,11 +460,7 @@ async def main():
         relay.off()
         print(f"Exception occurred: {e}")
         send_color(59,255,0,0,255)
-        error_buf = io.StringIO()
-        #sys.print_exception(e, error_buf)
-        error_message = error_buf.getvalue()
-        #print(f"Full Traceback:\n{error_message}")
-        await send_status_notification(f"Error in main:\n{error_message}")
+        await send_status_notification(f"Error in main:{e}")
         time.sleep(5)
         machine.reset()
 # Run the asyncio event loop
@@ -484,7 +476,7 @@ try:
     retries = 0
     while retries < 5:
         try:
-            sht = SHT4x(1,18,19) #SHT TEMPERATURE SENSOR
+            sht = SEN0546(scl_pin=19,sda_pin=18) #SHT TEMPERATURE SENSOR
             if sht is not None:
                 asyncio.run(send_status_notification("Temperature Sensor Connected"))
                 send_color(58,0,255,0,5)
