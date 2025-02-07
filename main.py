@@ -52,6 +52,21 @@ def send_color(lighttype,r, g, b,brightness):
             time.sleep(5)
             continue
 
+async def fade_lights(color, dim, delay=.1, steps=20):
+    """Asynchronously dims or brightens NeoPixels from start_color to end_color over 'steps' steps."""
+
+    if dim == True:
+        brightness = 255
+        while brightness > 0 :
+            send_color(1, color[1], [2], [3], brightness)
+            brightness -=5
+            await asyncio.sleep(delay)  # Non-blocking delay
+    else:
+        brightness = 0
+        while brightness < 255:
+            send_color(1, color[1], [2], [3], brightness)
+            brightness -=5
+            await asyncio.sleep(delay) # Non-blocking delay
 
 def reset_trinket():
     resetpin.low()
@@ -277,11 +292,8 @@ async def control_neopixels():
         if compare_timestamps(current_timestamp, sunset, 0) and sunHasRisen and not sunHasSet:
             await send_lights_notification("Sunset Starting")
             lights_on = False  # Update state
-            brightness = 255  # Reset before dimming
-            while brightness > 0:
-                send_color(1, 255, 120, 50, brightness)
-                brightness -= 5
-                await asyncio.sleep(1)
+            await fade_lights((255,150,20), True)
+            send_color(1, 0, 0, 0, 0)  # Ensure lights are off
             sunHasSet = True
             await send_lights_notification("Sunset Complete, Nighttime")
 
@@ -294,11 +306,7 @@ async def control_neopixels():
         elif compare_timestamps(current_timestamp, sunrise, 0) and not sunHasRisen:
             await send_lights_notification("Sunrise Starting")
             lights_on = True  # Update state
-            brightness = 0  # Start from 0 before fading in
-            while brightness < 255:
-                send_color(1, 255, 120, 50, brightness)
-                brightness += 5
-                await asyncio.sleep(1)
+            await fade_lights((255,150,20), False)
             await send_lights_notification("Sunrise Complete, Daytime")
             sunHasRisen = True
 
@@ -366,7 +374,6 @@ async def check_reboot(upday):
         hungryGecko.feed()
         await asyncio.sleep(1)'''
 
-
 async def check_connection():
     global wlan, connected
     while True:
@@ -428,8 +435,6 @@ def connectWifi():
     connected = False
     return None
 
-
-
 def compare_timestamps(currenttime,eventtime,newoffset):
     ct = time.mktime(gss.GetTimeTuple(currenttime))-newoffset # type: ignore
     et = time.mktime(gss.GetTimeTuple(eventtime))-newoffset # type: ignore
@@ -437,8 +442,7 @@ def compare_timestamps(currenttime,eventtime,newoffset):
         return True
     else:
         return False
-
-    
+  
 async def main():
     # Start the tasks
     try:
@@ -467,7 +471,6 @@ async def main():
         await send_status_notification(f"Error in main:\n{error_message}")
         time.sleep(5)
         machine.reset()
-
 # Run the asyncio event loop
 try:
     print("Inizializing...")
