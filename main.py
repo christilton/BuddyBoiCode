@@ -52,22 +52,6 @@ def send_color(lighttype,r, g, b,brightness):
             time.sleep(5)
             continue
 
-async def fade_lights(color, dim, delay=.1, steps=20):
-    """Asynchronously dims or brightens NeoPixels from start_color to end_color over 'steps' steps."""
-
-    if dim == True:
-        brightness = 255
-        while brightness > 0 :
-            send_color(1, color[1], [2], [3], brightness)
-            brightness -=5
-            await asyncio.sleep(delay)  # Non-blocking delay
-    else:
-        brightness = 0
-        while brightness < 255:
-            send_color(1, color[1], [2], [3], brightness)
-            brightness -=5
-            await asyncio.sleep(delay) # Non-blocking delay
-
 def reset_trinket():
     resetpin.low()
     time.sleep(.1)
@@ -86,13 +70,14 @@ async def update_setpoint_feed(new_setpoint):
     }
     
     try:
-        gc()
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            print(f"Successfully updated setpoint feed.")
-        else:
-            print(response.text)
-        response.close()
+        if new_setpoint != 0:
+            gc()
+            response = requests.post(url, headers=headers, json=data)
+            if response.status_code == 200:
+                print(f"Successfully updated setpoint feed.")
+            else:
+                print(response.text)
+            response.close()
     except Exception as e:
         print(f"Failed to update setpoint feed: {e}")
     await asyncio.sleep(1)  # Small delay to prevent CPU overload
@@ -100,6 +85,7 @@ async def update_setpoint_feed(new_setpoint):
 async def send_setpoint_periodically():
     global setpoint
     while True:
+        
         await update_setpoint_feed(setpoint)  # Send the current setpoint to Adafruit IO
         await asyncio.sleep(3600)  # Wait for an hour before sending again
 
@@ -158,20 +144,23 @@ async def read_sensor(sht):
     lamp_status = 0
     max_retries = 5
     while True:
+        
         retries = 0
-        while retries < max_retries:
-            try:
-                temperature = sht.temp()
-                humidity = sht.humidity()
-                break  # Successful read, exit retry loop
-            except OSError as e:
-                retries += 1
-                await asyncio.sleep(0.5)  # Small delay before retry
+        if retries < max_retries:
+            while retries < max_retries:
+                try:
+                    temperature = sht.temp()
+                    humidity = sht.humidity()
+                    break  # Successful read, exit retry loop
+                except OSError as e:
+                    retries += 1
+                    await asyncio.sleep(0.5)
         else:
             print("Max retries reached, skipping this cycle.")
             await send_status_notification("Temperature Sensor Error. Resetting...")
-            reset_trinket()
-            machine.reset()
+            reset_i2c()
+            relay.off()
+            continue
             # Skip to next loop iteration
         #print("Temperature: {}°F, Humidity: {}%".format(temperature, humidity))
 
@@ -180,7 +169,7 @@ async def read_sensor(sht):
             relay.on()  # Turn on the heat lamp
             if lamp_status == 0 :
                 if wlan and wlan.isconnected():
-                    data = {'value': 'ON'}
+                    data = {'value': f'ON, Temp {temperature}'}
                     FEED_KEY = 'lamp-gecko'
                     url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
                     headers = {
@@ -196,7 +185,7 @@ async def read_sensor(sht):
             relay.off()  # Turn off the heat lamp
             if lamp_status == 1:
                 if wlan and wlan.isconnected():
-                    data = {'value': 'OFF'}
+                    data = {'value': 'OFF, Temp {temperature}'}
                     FEED_KEY = 'lamp-gecko'
                     url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
                     headers = {
@@ -218,6 +207,7 @@ async def send_temp():
         global current_timestamp
         
         while True:
+            
             if sht is not None:
                 temperature = sht.temp()
             #print(temperature)
@@ -284,27 +274,16 @@ async def control_neopixels():
     lights_on = None  # Track light status to avoid redundant notifications
 
     while True:
-
-        if compare_timestamps(current_timestamp, sunset, 0) and sunHasRisen and not sunHasSet:
-            await send_lights_notification("Sunset Starting")
-            lights_on = False  # Update state
-            await fade_lights((255,150,20), True)
-            send_color(1, 0, 0, 0, 0)  # Ensure lights are off
+        
+        if compare_timestamps (current_timestamp, sunrise, 0):
+            sunHasRisen = True
+        if compare_timestamps (current_timestamp, sunset, 0):
             sunHasSet = True
-            await send_lights_notification("Sunset Complete, Nighttime")
-
-        elif sunHasRisen and not sunHasSet:
+        if sunHasRisen and not sunHasSet:
             if lights_on != True:  
                 send_color(*DAY_COLOR)
                 await send_lights_notification("Daytime, Lights ON")
                 lights_on = True  # Update state
-
-        elif compare_timestamps(current_timestamp, sunrise, 0) and not sunHasRisen:
-            await send_lights_notification("Sunrise Starting")
-            lights_on = True  # Update state
-            await fade_lights((255,150,20), False)
-            await send_lights_notification("Sunrise Complete, Daytime")
-            sunHasRisen = True
 
         else:
             if lights_on != False:  # Notify only if status changes
@@ -348,6 +327,7 @@ async def send_lights_notification(message):
 async def check_reboot(upday):
     if wlan and wlan.isconnected():
         while True:
+            
             current_day = gss.GetDay()
             print(f'upday = {upday}, current_day = {current_day}')
            # await send_status_notification(f'Checking Reboot: upday = {upday}, current_day = {current_day}')
@@ -364,11 +344,6 @@ async def check_reboot(upday):
                 machine.reset()
                 
             await asyncio.sleep(900)
-
-'''async def watchGecko():
-    while True:
-        hungryGecko.feed()
-        await asyncio.sleep(1)'''
 
 async def check_connection():
     global wlan, connected
@@ -450,7 +425,6 @@ async def main():
             control_neopixels(),
             check_reboot(upday),
             check_connection(),
-            #watchGecko(),
             periodic_status_report(),
             send_setpoint_periodically(),
             #button_checker(),
@@ -512,14 +486,13 @@ try:
     asyncio.run(main())
 except Exception as e:
     print(f"System Error: {e}")
-    relay.off()
-    send_color(1,0,0,0,0)
     time.sleep(1)
     send_color(57,255,1,1,5)
     asyncio.run(send_status_notification(f"System Stopped by Exception: {e}"))
-    reset_trinket()
 except KeyboardInterrupt:
     print("System Stopped")
+    asyncio.run(send_status_notification("System Stopped by Keyboard Interrupt"))
+finally:
     relay.off()
     send_color(1,0,0,0,0)
-    asyncio.run(send_status_notification("System Stopped by Keyboard Interrupt"))
+    machine.reset()
