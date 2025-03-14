@@ -19,6 +19,7 @@ connected = False
 current_timestamp = 0
 # Initialize relay pin
 relay = Pin(4, Pin.OUT)
+relay.off()
 sht = None
 wlan = None
 # I2C configuration for controlling NeoPixels
@@ -185,7 +186,7 @@ async def read_sensor(sht):
             relay.off()  # Turn off the heat lamp
             if lamp_status == 1:
                 if wlan and wlan.isconnected():
-                    data = {'value': 'OFF, Temp {temperature}'}
+                    data = {'value': f'OFF, Temp {temperature}'}
                     FEED_KEY = 'lamp-gecko'
                     url = f'https://io.adafruit.com/api/v2/{ADAFRUIT_AIO_USERNAME}/feeds/{FEED_KEY}/data'
                     headers = {
@@ -495,4 +496,3 @@ except KeyboardInterrupt:
 finally:
     relay.off()
     send_color(1,0,0,0,0)
-    machine.reset()

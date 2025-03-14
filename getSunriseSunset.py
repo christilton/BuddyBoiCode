@@ -17,8 +17,12 @@ def GetTime():
         gc()
         data = requests.get("http://worldtimeapi.org/api/timezone/America/New_York")
         if data.status_code == 200:
-            time = data.json()['unixtime'] + data.json()['raw_offset']
-            data.close()
+            if data.json()['dst'] == True:
+                time = data.json()['unixtime'] + data.json()['raw_offset'] +3600
+                data.close()
+            else:
+                time = data.json()['unixtime'] + data.json()['raw_offset']
+                data.close()
             return time
         else:
             print(f"Error fetching time: {data.status_code}")
